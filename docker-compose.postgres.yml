@@ -1,0 +1,28 @@
+# 覆盖文件: 使用 PostgreSQL 替代默认的 SQLite
+# 启动方式: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: air-monitor-db
+    environment:
+      POSTGRES_USER: air
+      POSTGRES_PASSWORD: air_pass
+      POSTGRES_DB: air_monitor
+    volumes:
+      - air-monitor-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U air -d air_monitor"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    environment:
+      DATABASE_URL: postgresql+psycopg2://air:air_pass@db:5432/air_monitor
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  air-monitor-pgdata:

@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    image: air-monitor-backend:1.0.0
+    container_name: air-monitor-backend
+    environment:
+      FLASK_ENV: production
+      # SQLite 存放在 /data 卷中, 无需外部数据库依赖
+      DATABASE_URL: sqlite:////data/air_monitor.db
+      SEED_DEMO: "true"
+      CORS_ORIGINS: "*"
+      TIMEZONE: Asia/Shanghai
+      GUNICORN_WORKERS: "2"
+    volumes:
+      - air-monitor-data:/data
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/api/meta/health', timeout=4).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    image: air-monitor-frontend:1.0.0
+    container_name: air-monitor-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  air-monitor-data:
