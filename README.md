@@ -234,6 +234,43 @@ cd frontend
 npm run build                # 生产构建校验
 ```
 
+### 统一质量门禁(一条命令)
+
+`scripts/quality-gate/gate.sh` 把“建表初始化 → 演示数据校验 → 后端测试 → 前端构建 →
+编排启动并等待健康 → 关键页面冒烟”串成 **6 步门禁**, 任一步失败立即以**非零码**结束并打印
+卡点步骤、日志路径与修复建议。支持本地与容器两种启动方式:
+
+```bash
+scripts/quality-gate/gate.sh local     # 方式一: 本地(隔离 venv + 门禁专用 SQLite + Vite preview)
+scripts/quality-gate/gate.sh docker    # 方式二: docker compose(独立项目/镜像/卷, 等健康检查)
+```
+
+| 步骤 | 内容 | 失败常见原因 |
+| --- | --- | --- |
+| 1 | `flask init-db` 建表 + 空库计数必须为 0 | DATABASE_URL 不可写、模型导入错误 |
+| 2 | `seed` 后按固定断言校验(8 站/1200 数据/52 超标及状态分布、唯一约束、无孤立记录) | `seed.py`/超标规则被改动 |
+| 3 | 后端 pytest 全量(43 用例, 内存 SQLite) | 用例断言失败 |
+| 4 | 前端 `vite build`, 校验 `dist/index.html` 与 `assets/` | 语法/导入/构建错误 |
+| 5 | 启动后端+前端; 容器方式须等 backend `healthy` 与 frontend `/healthz` | 端口占用、容器不健康 |
+| 6 | 5 个业务页 + SPA 回退 + 经前端 `/api` 反代的端到端冒烟 + HTTP 数据复核 | nginx 代理/接口异常 |
+
+门禁的隔离与可重复性保证:
+
+- **不污染业务数据**: 本地用 `.tools/quality-gate/gate.db`, 不触碰 `backend/instance/`;
+  容器用独立 project `airqgate`、独立镜像名/容器名/宿主端口/卷, 结束 `down -v` 并删镜像,
+  不影响 README 默认的 `docker compose up` 栈(`air-monitor-*`)。
+- **可重复且结论稳定**: 每次新建临时工作目录、空库重建、seed 使用固定随机种子;
+  后端测试跑在内存 SQLite; 依赖缓存放在 `.tools/`(已被 `.gitignore` 忽略)。
+- **端口预检**: 门禁端口(本地 5055/5188, 容器 5090/8098)被占用时直接报错, 不会误连已有服务。
+
+可调参数:
+
+```bash
+GATE_BACKEND_PORT=5061 GATE_FRONTEND_PORT=5191 scripts/quality-gate/gate.sh local
+GATE_DOCKER_BACKEND_PORT=5091 GATE_DOCKER_FRONTEND_PORT=8099 scripts/quality-gate/gate.sh docker
+KEEP_WORKDIR=1 scripts/quality-gate/gate.sh local   # 失败时保留临时目录便于排查
+```
+
 健康检查与常用命令:
 
 ```bash
