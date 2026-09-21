@@ -1,0 +1,21 @@
+# 质量门禁专用 docker compose 覆盖文件 (仅被 quality-gate.sh docker 模式引用)
+# 与日常 docker compose up 的资源完全隔离:
+#   - 独立项目名 qualitygate (独立网络)
+#   - 独立容器名 qualitygate-* (避免与日常栈的 air-monitor-* 容器撞名)
+#   - 独立端口 18080 / 15000, 避免与本机 8080/5000 上的业务实例冲突
+#   - 独立卷名 (项目名前缀), 门禁结束时随 compose down -v 一并清除
+#   - 始终写入演示数据, 并关闭重启策略, 便于门禁脚本做确定性断言
+services:
+  backend:
+    container_name: qualitygate-backend
+    environment:
+      SEED_DEMO: "true"
+    restart: "no"
+    ports:
+      - "15000:5000"
+
+  frontend:
+    container_name: qualitygate-frontend
+    restart: "no"
+    ports:
+      - "18080:80"

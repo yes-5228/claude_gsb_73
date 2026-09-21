@@ -234,6 +234,34 @@ cd frontend
 npm run build                # 生产构建校验
 ```
 
+### 统一质量门禁 (一条命令跑完全链路)
+
+`scripts/quality-gate.sh` 把建表初始化、演示数据校验、后端测试、前端构建、服务启动与冒烟串成**一条命令、一个结论**, 本地与容器两种方式行为一致:
+
+```bash
+./scripts/quality-gate.sh local              # 本地: venv + gunicorn + Vite dev
+./scripts/quality-gate.sh docker             # 容器: docker compose 全新栈 (SQLite)
+./scripts/quality-gate.sh docker --postgres  # 容器: 叠加 PostgreSQL 16
+```
+
+| 步骤 | 本地 (L1–L8) | 容器 (D0–D6) |
+| --- | --- | --- |
+| 依赖/镜像 | 创建隔离 venv 并安装 requirements-dev | 构建后端镜像; 前端镜像多阶段构建内含 `vite build` |
+| 建表初始化 | 全新隔离 SQLite 上 `flask init-db` | 全新独立卷, entrypoint 自动建表 |
+| 演示数据 | `flask seed` 后直连数据库做一致性校验 | 经运行中容器的 HTTP API 校验同一基准 |
+| 后端测试 | `pytest`(43 用例, 内存库) | 一次性容器内 `pytest`(内存库) |
+| 健康检查 | 轮询后端 `/api/meta/health` 与前端 | **db/backend/frontend 全部 `healthy` 才进入冒烟** |
+| 冒烟 | 健康检查 + 5 个关键页面 + 关键列表 API | 同左, 页面经 nginx 静态托管与 `/api` 反代 |
+
+门禁特性:
+
+- **可重复、不污染**: 每次使用全新隔离数据库 (本地 `.gate/gate.db`, 容器独立项目 `qualitygate` 与独立卷), 不读取上次残留, 结束自动清理; 日常的 `backend/instance/air_monitor.db` 与 `docker compose up` 的容器/卷 (`air-monitor-*`) 完全不受影响。门禁使用独立高位端口 (本地 15000/15173, 容器 15000/18080), 可通过环境变量覆盖。
+- **结论稳定**: seed 使用固定随机种子, 断言基准为 **8 监测点 / 1200 监测数据 / 52 超标记录 (待标注 18 / 已确认 17 / 已忽略 17)**, 另校验唯一约束、超标记录与监测数据一一对应、限值快照自洽等。
+- **失败即停、非零退出**: 每步独立编号, 失败时打印卡点、实际值与修复建议, 并指明日志位置 (`.gate/logs/`)。
+- 冒烟同时支持直连后端与前端入口: 直连后端时跳过页面检查, 经前端时额外验证 SPA 路由回退与入口资源。
+
+可选参数: `--clean`(忽略依赖/镜像缓存全量重建)、`--keep-up`(冒烟后保留服务, 便于手工查看; 下次运行会自动回收)、`--help`。
+
 健康检查与常用命令:
 
 ```bash
